@@ -1,0 +1,40 @@
+replicaCount: 2
+progressDeadSec: 60
+
+apiVersion: apps/v1
+
+name: base
+
+image:
+  repository: custom-registry/example
+  tag: latest
+  pullPolicy: Always
+
+namespace: default
+
+podport: 8080
+
+service:
+  type: LoadBalancer
+  http: http
+  protocol: TCP
+  port: 80
+
+ingress:
+  annotations: {}
+  enabled: true
+  host: "example.com"
+  path: /
+
+resources:
+  requests:
+    cpu: 300m
+    memory: 200Mi
+  limits:
+    cpu: 400m
+    memory: 256Mi
+
+annotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

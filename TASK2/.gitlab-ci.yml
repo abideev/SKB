@@ -1,0 +1,122 @@
+stages:
+  - build
+  - deploy
+  - check_branch_name
+  - check_abandonment_branch
+  - dismiss
+
+services:
+  - docker:18.09-dind
+
+variables:
+  KUBECONFIG: ~/.kube/config
+
+build:
+  stage: build
+  image: custom-registry/cake:2.1-sdk-mono # директория CI_CAKE
+  before_script:
+    - mkdir -p ~/.kube
+    - echo ${kube_config} | base64 -d > ${KUBECONFIG}
+  script:
+    - cd ci-scripts
+    - ./build.sh --projectName={RELEASENAME} --latestTag=${CI_COMMIT_SHORT_SHA} --branch=${$CI_COMMIT_BRANCH} --build_criterion=true --host="{HOST}"
+  only:
+    - master
+    - /^task-\d{1,3}$/i
+
+
+.deploy: &deploy
+  stage: deploy
+  image: custom-registry/cake:2.1-sdk-mono # директория CI_CAKE
+  before_script:
+    - mkdir -p ~/.kube
+    - echo ${kube_config} | base64 -d > ${KUBECONFIG}
+  script:
+    - cd ci-scripts
+    - ./build.sh --projectName={RELEASENAME} --latestTag=${CI_COMMIT_SHORT_SHA} --branch=${$CI_COMMIT_BRANCH} --deploy_criterion=true --host="{HOST}"
+
+
+deploy:prod:
+  <<: *deploy
+  environment:
+    name: prod
+  variables:
+    RELEASENAME: "${CI_COMMIT_REF_SLUG}-application-name"
+    BRANCH: ${CI_COMMIT_REF_SLUG}
+    HOST: "example.ru"
+  only:
+    - master
+  when: manual
+
+
+deploy:dev:
+  <<: *deploy
+  environment:
+    name: ${CI_COMMIT_REF_SLUG}
+    on_stop: environment:stop
+    auto_stop_in: 1 day
+  variables:
+    RELEASENAME: "${CI_COMMIT_REF_SLUG}-application-name"
+    BRANCH: ${CI_COMMIT_REF_SLUG}
+    HOST: "${CI_COMMIT_REF_SLUG}.backend-test.skblab.ru"
+  only:
+    - /^task-\d{1,3}$/i
+  when: on_success
+
+
+environment:stop:
+  stage: dismiss
+  image: custom-registry/cake:2.1-sdk-mono # директория CI_CAKE
+  script:
+    - cd ci-scripts
+    - ./build.sh  --projectName={RELEASENAME} --branch=${$CI_COMMIT_BRANCH} --uninstall_criterion=true "
+  environment:
+    name: ${CI_COMMIT_REF_SLUG}
+    action: stop
+  variables:
+    BRANCH: ${CI_COMMIT_REF_SLUG}
+  only:
+    - /^task-\d{1,3}$/i
+  when: manual
+
+
+check_branch_name:
+  stage: check_branch_name
+  image: custom-registry/task2:python # Образ из директории TASK2
+  variables:
+    SMTP_SERVER: ${SMTP_SERVER} # smtp.example.com
+    SMTP_PORT: ${SMTP_PORT} # 587
+    SMTP_LOGIN: ${SMTP_LOGIN} # name@example.com
+    SMTP_RECIEVER: ${SMTP_RECIEVER} # name@example.com
+    SMTP_PASSWORD: ${SMTP_PASSWORD}  # passwd
+    SMTP_SENDER: ${SMTP_SENDER} # name@example.com
+    GITLAB_SCHEME: ${GITLAB_SCHEME} # ssh://
+    GITLAB_URL: ${GITLAB_URL}  # git.example.com
+    ACCESS_TOKEN: ${ACCESS_TOKEN} # token
+    REDIS_HOST: ${REDIS_HOST} # IP
+  script:
+    - python check_brach_name.py
+  only:
+    - schedules # https://docs.gitlab.com/ee/ci/pipelines/schedules.html
+
+
+
+check_abandonment_branch:
+  stage: check_abandonment_branch
+  image: custom-registry/task2:python # Образ из директории TASK2
+  variables:
+    SMTP_SERVER: ${SMTP_SERVER} # smtp.example.com
+    SMTP_PORT: ${SMTP_PORT} # 587
+    SMTP_LOGIN: ${SMTP_LOGIN} # name@example.com
+    SMTP_RECIEVER: ${SMTP_RECIEVER} # name@example.com
+    SMTP_PASSWORD: ${SMTP_PASSWORD}  # passwd
+    SMTP_SENDER: ${SMTP_SENDER} # name@example.com
+    GITLAB_SCHEME: ${GITLAB_SCHEME} # https://
+    GITLAB_URL: ${GITLAB_URL}  # git.example.com
+    ACCESS_TOKEN: ${ACCESS_TOKEN} # token
+    REDIS_HOST: ${REDIS_HOST} # IP
+  script:
+    - python check_last_commit.py
+  only:
+    - schedules # https://docs.gitlab.com/ee/ci/pipelines/schedules.html
+
